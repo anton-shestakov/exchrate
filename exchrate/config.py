@@ -2,7 +2,6 @@
 '''All settings are instantiated here:
     ISO currency codes dict
     Exchange Rate sources
-    Database connection parameters
 '''
 
 import urllib2 as http
@@ -120,20 +119,4 @@ class ExchangeRateSource():
         '''returns dict containing information for provided source'''
 
         return self._exrate_sources.get(exratesrc, {})
-
-
-class DatabaseProperties():
-    '''Database configuration is stored here
-    To-do: safe password managing, support for multi-db setup
-    '''
-
-    def __init__(self):
-        '''just set connection credentials attributes'''
-        (self.db_server, 
-        self.db_user, 
-        self.db_pwd, 
-        self.db_schema) = ('MYPC\DBMAIN',
-                         'py_app',
-                         'zxcv123',
-                         'FRD')
 
