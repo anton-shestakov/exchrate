@@ -32,3 +32,5 @@ class TestExchangeRateSource(unittest.TestCase):
     def test_get_source_config_bad(self):
         self.assertFalse(self.source_obj.get_source_config('N/a'))
 
+if __name__ == '__main__':
+    unittest.main()
