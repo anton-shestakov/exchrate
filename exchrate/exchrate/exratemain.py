@@ -1,40 +1,25 @@
-from datetime import date, timedelta, datetime
 from lxml import etree
 from copy import deepcopy
 from . import exrateparse, exratedb
 
-def splitDateRange(startdate, enddate, adddays):
+# *** To be moved to config file or environmental settings ***
+# *** Not to be stored in plain text ***
+DB_SERVER = 'enter_server_path'
+DB_USER = 'enter_username'
+DB_PASSWORD = 'enter_password'
+DB_DATABASE = 'enter_database_name'
 
-    try:
-        sd, ed, td = (datetime.strptime(startdate, '%Y-%m-%d').date(),
-                      datetime.strptime(enddate, '%Y-%m-%d').date(),
-                      timedelta(adddays)
-                      )
+def getExchRateXml(exrate, chunksize=8000):
+    '''returns xml generator with each element size <= chunksize
+    
+    Positional arguments:
+    exrate -- list of exchange rates with named tuples
+    
+    Keyword arguments:
+    chunksize -- size in bytes of xml fragment to be returned.
+        Default is 8000 to comply with mssql driver text size limit
+    '''
 
-        # return start date in any case
-        yield sd.isoformat()
-
-        while ed > sd:
-            sd += td
-            yield sd.isoformat()
-
-    except (ValueError, TypeError):
-        return
-
-def getExchRateRange(sourceid, startdate, enddate, currencyfrom, currencyto):
-
-    gen_daterange = splitDateRange(startdate, enddate, 1)
-    exrateout = []
-    for exrdate in gen_daterange:
-        exrate = exrateparse.getExchRate(sourceid, exrdate, currencyfrom, currencyto)
-        if exrate.curfrom != None:
-            exrateout.append(exrate)
-
-    return exrateout
-
-def getExchRateAsXml(sourceid, startdate, enddate, currencyfrom, currencyto):
-
-    exrate = getExchRateRange(sourceid, startdate, enddate, currencyfrom, currencyto)
     if exrate:
         # create xml elements for output
         exRates = etree.Element('exchRates')
@@ -46,34 +31,58 @@ def getExchRateAsXml(sourceid, startdate, enddate, currencyfrom, currencyto):
         etree.SubElement(exRate, 'exchRate')
         exRateList = []
         # populate xml elements with returned data
-        for fromCurr, exchRate, toCurr, exchDate in exrate:
+        for sourceId, exchDate, fromCurr, toCurr, exchRate in exrate:
             exRate[0].text = exchDate
-            exRate[1].text = '1'      # temporarily hardcoded since only 1 source is implemented
+            exRate[1].text = str(sourceId)
             exRate[2].text = str(fromCurr)
             exRate[3].text = str(toCurr)
             exRate[4].text = str(exchRate)
             exRateList.append(deepcopy(exRate))
         # populate xml root element with generated elements
+        buffer_add = len(etree.tostring(exRates).decode())
+        buffer_size = buffer_add
+
         for xmlExrate in exRateList:
-            exRates.append(xmlExrate)
-        return etree.tostring(exRates, pretty_print=True).decode()
-    else:
-        return ''
+            buffer_size = buffer_size + len(etree.tostring(xmlExrate).decode()) 
+            if buffer_size < chunksize:
+                exRates.append(xmlExrate)
+            else:
+                # return current list of exchange rates
+                yield etree.tostring(exRates).decode() 
+                # reset buffer and insert current element
+                exRates.clear()
+                exRates.append(xmlExrate)
+                buffer_size = buffer_add + len(etree.tostring(xmlExrate).decode()) 
+
+        # final result
+        yield etree.tostring(exRates).decode() 
 
 
-def loadExchRate(sourceid, startdate, enddate, currencyfrom, currencyto, overwrite='N'):
+def loadExchRate(sourceid, startdate, enddate, currencyfrom, currencyto,
+        overwrite = 'N', debug = False, debug_filename = ''):
+    
+    exrates = exrateparse.getExchRate(sourceid, (startdate, enddate), currencyfrom, currencyto)
+    exrate = getExchRateXml(exrates)
 
-    exrate = getExchRateAsXml(sourceid, startdate, enddate, currencyfrom, currencyto)
-    if exrate:
-        conn = exratedb.connect_db('MYPC\DBMAIN', 'py_app', 'zxcv123', 'FRD')
-        ins_rows = exratedb.execute_proc_return_value(conn
-                                                      , 'ttsp_ins_exchrate'
-                                                      , (exrate
-                                                         , overwrite
-                                                         , exratedb.output_param(long)
-                                                         )
-                                                      )
+    if debug:
+        with open(debug_filename, 'w') as f:
+            f.write(str(''.join(exrate)))
+        return
+    
+    ins_rows = 0
+    if exrates:
+        conn = exratedb.connect_db(DB_SERVER, DB_USER, DB_PASSWORD, DB_DATABASE)
+
+        for exratechunk in exrate:
+            ins_rows += exratedb.execute_proc_return_value(conn
+                                                          , 'ttsp_ins_exchrate'
+                                                          , (exratechunk
+                                                             , overwrite
+                                                             , exratedb.output_param(long)
+                                                             )
+                                                          )[0]
+
         conn.close()
-        if ins_rows:
-            return ins_rows[0]
-    return 0
+
+    return ins_rows
+
