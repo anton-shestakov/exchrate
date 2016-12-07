@@ -1,10 +1,12 @@
-# exchrate
-parsing exchange rates from various sources (currently only National Bank Of Ukraine (bank.gov.ua) is supported)
-written in Python. tested on python 2.7.12.
+# Exchange rate parser 
+Parsing exchange rates between currencies using different sources.
 
-Database backend required for storing exchange rates:
-MSSQL Server
+Currently supported sources:
+* bank.gov.ua (National Bank Of Ukraine. Local currency is always UAH
+* api.fixer.io (European Central Bank)
 
-Used libraries:
-pymssql -- connect to MSSQL server instance
-grequests -- make http requests to exchange rate source URLs
+Requirements:
+* Python 2.7
+* grequests
+
+Unit Tests are located in test directory
