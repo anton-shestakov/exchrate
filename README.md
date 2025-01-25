@@ -6,7 +6,7 @@ Currently supported sources:
 * api.fixer.io (European Central Bank)
 
 Requirements:
-* Python 2.7
-* grequests
+* Python 3.10
+* httpx
 
 Unit Tests are located in test directory

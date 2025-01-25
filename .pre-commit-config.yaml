@@ -1,0 +1,15 @@
+files: ^(exchrate/|test/|bin/)
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    # Ruff version.
+    rev: v0.7.3
+    hooks:
+      # Run the isort
+      - id: ruff
+        name: ruff-isort
+        args: ["--select", "I", "--fix"]
+      # Run the linter
+      - id: ruff
+        name: ruff-lint
+      # Run the formatter.
+      - id: ruff-format

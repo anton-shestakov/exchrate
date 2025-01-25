@@ -1,18 +1,20 @@
 #!/usr/bin/env python
 '''sample usage of exchrate package'''
 
-import exchrate # import package
-from exchrate import exrateparse # import parse module
-from exchrate.exrateparse import ExchangeRateParse # import class directly
 from pprint import pprint
 
+import exchrate  # import package
+from exchrate import exrateparse  # import parse module
+from exchrate.exrateparse import ExchangeRateParse  # import class directly
+
 # set parameters
-exratesrc = 'NBU-json' # exchange rate source
-exratedate = ('2016-12-01', '2016-12-02') # exchange rate dates
-localcur = 'UAH' # local currency code 1 base = x local
-basecur = 'USD' # base currency code
+exratesrc = 'NBU-json'  # exchange rate source
+exratedate = ('2016-12-01', '2016-12-02')  # exchange rate dates
+localcur = 'UAH'  # local currency code 1 base = x local
+basecur = 'USD'  # base currency code
 
 params = (exratesrc, exratedate, basecur, localcur)
+
 
 def get_exch_rate_example():
     '''example of getting exchange rate'''
@@ -25,9 +27,9 @@ def get_exch_rate_example():
     r1 = e1.get_exch_rate()
 
     # assign instance variable holding last result
-    t = e2.get_exch_rate()
+    e2.get_exch_rate()
     r2 = e2._last_result
-    
+
     r3 = e3.get_exch_rate()
 
     # print results
@@ -44,28 +46,30 @@ def get_exch_rate_example():
     print('____')
     print('------------ END - get_exch_rate_example ------------')
 
+
 def use_exch_rate_calc():
     '''example of using exchange rate result in calculation'''
-    
+
     # sample data for calculation
-    price_eur = 150.25      # e.g. we have price in EUR and we want to convert
-                            # it to PLN for displaying
+    price_eur = 150.25  # e.g. we have price in EUR and we want to convert
+    # it to PLN for displaying
 
     # create object
     e = ExchangeRateParse(*params)
-    
+
     # change object settings
-    e.set_source('ECB-Fixer') # update exchange rate source
-    e.exratedate = '2016-12-01' # update exchange rate date
-    e.localcur = 'PLN' # update local currency (1 EUR = x PLN)
-    e.basecur = 'EUR' # update base currency (to)
-    
+    e.set_source('ECB-Fixer')  # update exchange rate source
+    e.exratedate = '2016-12-01'  # update exchange rate date
+    e.localcur = 'PLN'  # update local currency (1 EUR = x PLN)
+    e.basecur = 'EUR'  # update base currency (to)
+
     price_pln = price_eur * next(iter(e.get_exch_rate()), None).exrate
-    
+
     print('')
     print('------------ START - use_exch_rate_calc ------------')
-    print('{0} EUR = {1:.2f} PLN (on {2})'.format(price_eur, price_pln, e.exratedate))
+    print('{} EUR = {:.2f} PLN (on {})'.format(price_eur, price_pln, e.exratedate))
     print('------------ END - use_exch_rate_calc ------------')
+
 
 if __name__ == '__main__':
     get_exch_rate_example()

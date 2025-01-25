@@ -26,21 +26,24 @@ of named tuples. Currently following process is implemented:
         ExchangeRateParse objects)
 '''
 
-import grequests
-from . import config
-from datetime import datetime, timedelta
-from collections import namedtuple
+import asyncio
 import json
+from collections import namedtuple
+from datetime import datetime, timedelta
+
+import httpx
+
+from . import config
 
 
-class ExchangeRateParse(object):
+class ExchangeRateParse:
     '''Exchange rate parsing class
-    
+
     Constructor
     ExchangeRateParse(exratesrc, exratedate, localcur, basecur, daysadd, df)
-    
+
     exratesrc -- exchange rate source code (config is read from config module)
-    exratedate -- sequence of dates to parse rate for 
+    exratedate -- sequence of dates to parse rate for
     basecur -- ISO 4217 literal base currency code
     localcur -- ISO 4217 literal local currency code (1 basecur = x localcur)
     daysadd -- optional parameter used for unpacking dates sequence
@@ -62,13 +65,13 @@ class ExchangeRateParse(object):
         daysadd -- days to be added to next date when unpacking dates
         df -- daterformat of dates in exratedate
     '''
-    
+
     # result output template
     EXRATE_TEMPLATE = namedtuple('Exrate', 'sourceid,exdate,localcur,basecur,exrate')
-   
-    def __init__(self, exratesrc, exratedate, basecur, localcur,
-                 daysadd=1, df='%Y-%m-%d'):
-        
+
+    def __init__(
+        self, exratesrc, exratedate, basecur, localcur, daysadd=1, df='%Y-%m-%d'
+    ):
         self.set_source(exratesrc)
         self.exratedate = exratedate
         self.localcur = localcur
@@ -79,14 +82,18 @@ class ExchangeRateParse(object):
         self._ccy_codes = config.CurrencyCode().get_ccy_codes()
         self._last_result = []
 
-   
+    def _get_api_responses(self, urls, max_connections=10):
+        return asyncio.get_event_loop().run_until_complete(
+            get_api_responses(urls, max_connections)
+        )
+
     def set_source(self, exratesrc):
-        '''update exchange rate source 
-        
+        '''update exchange rate source
+
         Positional arguments:
             exratesrc -- source code
         '''
-        
+
         # read source config
         tmp = config.ExchangeRateSource().get_source_config(exratesrc)
         if not tmp:
@@ -98,7 +105,7 @@ class ExchangeRateParse(object):
     def get_exch_rate(self):
         '''Get currency exchange rate from selected source, date(s)
         Returns: list of namedtuple instances with exchange rates
-    
+
         namedtuple fields:
             sourceid -- internal id of exchange rate source supplied
             exdate -- date on which exchange rate has been set
@@ -106,82 +113,66 @@ class ExchangeRateParse(object):
             curto -- local currency 3 digit ISO 4217 code
             exrate -- exchange rate between base and local currency
         '''
-        
+
         # initiate dates generator
-        dates_gen = self.split_dates(self.exratedate,
-                                     self.df,
-                                     self._source_config['dateformat'],
-                                     self.daysadd
-                                    )
-        
+        dates_gen = self.split_dates(
+            self.exratedate, self.df, self._source_config['dateformat'], self.daysadd
+        )
+
         # build api url list for dates provided
-        urls = (self._source_config['url'].format(exdate=d,
-                                                 localcur=self.localcur,
-                                                 basecur=self.basecur
-                                                )
-                for d in dates_gen
-               )
-        
+        urls = (
+            self._source_config['url'].format(
+                exdate=d, localcur=self.localcur, basecur=self.basecur
+            )
+            for d in dates_gen
+        )
+
         # collect responses
-        responses = self._get_api_responses(urls,
-                                            self._source_config['max_connections'])
+        responses = self._get_api_responses(
+            urls, self._source_config['max_connections']
+        )
 
         # map responses and return result
         self._last_result = self._map_response(responses)
 
         return self._last_result
 
-    @staticmethod
-    def _get_api_responses(urls, max_connections=10):
-        '''generates requests and make calls to API
-        
-        I/O function. Can be updated to use different http client
-
-        Return type:
-            list with texts of responses
-        '''
-
-        req_list = (grequests.get(url) for url in urls)
-        resp_list = grequests.map(req_list,
-                                  size=max_connections)
-
-        return (resp.text for resp in resp_list if resp and resp.ok)
-
     def _map_response(self, response):
         '''call method according to exchange source'''
+
         def map_not_found():
-            raise ValueError('map function in config is not found')    
-        
-        return getattr(self, self._source_config['field_mapper'],
-                       map_not_found)(response)
-    
+            raise ValueError('map function in config is not found')
+
+        return getattr(self, self._source_config['field_mapper'], map_not_found)(
+            response
+        )
+
     def _map_nbu_gov_ua(self, response):
-        '''Maps json from NBU.gov.ua exchange rate source 
+        '''Maps json from NBU.gov.ua exchange rate source
         Returns: list of OrderedDict instances with data
 
         Positional arguments (expected):
             responses -- response from NBU WS
         '''
         _source_id = self._source_config['id']
+
         def json_object_hook(r):
             '''json object hook for mapping NBU data'''
 
-            return self.EXRATE_TEMPLATE(_source_id,
-                                        datetime.strptime(
-                                            r['exchangedate'],
-                                            '%d.%m.%Y').date().isoformat(),
-                                        980,
-                                        r['r030'],
-                                        r['rate']
-                                       )
+            return self.EXRATE_TEMPLATE(
+                _source_id,
+                datetime.strptime(r['exchangedate'], '%d.%m.%Y').date().isoformat(),
+                980,
+                r['r030'],
+                r['rate'],
+            )
 
-        return [exrate
-                for _ in response
-                for exrate
-                in json.loads(_, object_hook=json_object_hook)
-                if exrate
-               ]
-
+        return [
+            exrate
+            for _ in response
+            for exrate in json.loads(_, object_hook=json_object_hook)
+            if exrate
+        ]
 
     def _map_ecb_fixer(self, response):
         '''Maps json from fixer.io exchange rate source
@@ -191,34 +182,33 @@ class ExchangeRateParse(object):
             responses -- response from ECB WS
         '''
 
-        _source_id, _ccy_codes = (self._source_config['id'],
-                                  self._ccy_codes
-                                 )
+        _source_id, _ccy_codes = (self._source_config['id'], self._ccy_codes)
+
         def json_object_hook(r):
             '''json object hook for mapping ECB Fixer data'''
 
             rates = r.get('rates', None)
             # Apply transform only if json is full
             if rates is not None:
-                return [self.EXRATE_TEMPLATE(_source_id,
-                                             datetime.strptime(
-                                                 r['date'],
-                                                 '%Y-%m-%d').date().isoformat(),
-                                             _ccy_codes[cur],
-                                             _ccy_codes[r['base']],
-                                             rate
-                                            )
-                        for cur, rate in rates.iteritems()               
-                       ]
+                return [
+                    self.EXRATE_TEMPLATE(
+                        _source_id,
+                        datetime.strptime(r['date'], '%Y-%m-%d').date().isoformat(),
+                        _ccy_codes[cur],
+                        _ccy_codes[r['base']],
+                        rate,
+                    )
+                    for cur, rate in rates.iteritems()
+                ]
             else:
                 return r
-        
-        return [exrate
-                for _ in response
-                for exrate
-                in json.loads(_, object_hook=json_object_hook)
-                if exrate
-               ]
+
+        return [
+            exrate
+            for _ in response
+            for exrate in json.loads(_, object_hook=json_object_hook)
+            if exrate
+        ]
 
     @staticmethod
     def split_dates(dates, df_in='%Y-%m-%d', df_out='%Y-%m-%d', daysadd=1):
@@ -239,20 +229,21 @@ class ExchangeRateParse(object):
         case2: all valid unique dates from sequence will be returned
         '''
         # convert to list if single date is provided
-        dates = [dates] if isinstance(dates, basestring) else dates
+        dates = [dates] if isinstance(dates, str) else dates
 
         # logic case 1
         try:
             sd, ed = (datetime.strptime(d, df_in).date() for d in dates[0:2])
             td = timedelta(daysadd)
-            if ed < sd: raise ValueError
-        except (ValueError, TypeError): # skip to logic case 2
+            if ed < sd:
+                raise ValueError
+        except (ValueError, TypeError):  # skip to logic case 2
             pass
         else:
             while ed >= sd:
                 yield sd.strftime(df_out)
                 sd += td
-            return # StopIteration
+            return  # StopIteration
 
         # logic case 2
         dates_processed = set()
@@ -270,3 +261,23 @@ class UnknownSourceError(ValueError):
 
     pass
 
+
+async def _get_api_response(url, client, sem):
+    '''generates requests and make calls to API
+
+    I/O function. Can be updated to use different http client
+
+    Return type:
+        list with texts of responses
+    '''
+
+    async with sem:
+        return await client.get(url)
+
+
+async def get_api_responses(urls, max_connections=10):
+    sem = asyncio.Semaphore(max_connections)
+    async with httpx.AsyncClient(timeout=10) as client:
+        futures = [_get_api_response(url, client, sem) for url in urls]
+        responses = await asyncio.gather(*futures)
+    return [response.text for response in responses if response.is_success]
